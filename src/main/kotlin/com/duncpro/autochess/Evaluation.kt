@@ -43,6 +43,11 @@ fun search(fromPosition: Position,  minDepth: Int, deadline: Instant, transposit
 
     var depth = minDepth
     while (deadline.isAfter(Instant.now())) {
+        // We have achieved a search depth large enough to compute every possible outcome of the game.
+        if (dfsResult.isTreeComplete) {
+            break
+        }
+
         // If the returned tree is null then the deadline has been reached, therefore break and use the result
         // computed by the last iteration.
         dfsResult = searchDeep(fromPosition, depth + 1, transpositionTable, deadline) ?: break
@@ -55,11 +60,6 @@ fun search(fromPosition: Position,  minDepth: Int, deadline: Instant, transposit
         // The given position represents the terminus of the game.
         if (dfsResult.children!!.isEmpty()) {
             assert(depth == 1)
-            break
-        }
-
-        // We have achieved a search depth large enough to compute every possible outcome of the game.
-        if (dfsResult.isTreeComplete) {
             break
         }
     }

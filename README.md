@@ -1,6 +1,7 @@
 # AutoChess
 Computer chess agent written in Kotlin.
 ##### Features
+- Alpha-beta pruning 
 - Iterative Deepening Search
 - Transposition Table / Evaluation Cache
 - Material Difference Heuristic

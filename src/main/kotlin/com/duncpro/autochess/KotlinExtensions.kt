@@ -48,6 +48,14 @@ inline fun <reified R> Stream<out Any>.filterIsInstance(): Stream<R> = this
     .filter { x -> x is R }
     .map { x -> x as R }
 
+fun <T, C: Comparable<C>> Stream<T>.max(selector: (T) -> C): T?
+    = this.max(Comparator.comparing { selector(it) }).orElse(null)
+
+fun <T> defineTotalOrder(definitionBuilder: MutableList<T>.() -> Unit): Comparator<T> {
+    val definition = ArrayList<T>()
+    definitionBuilder(definition)
+    return Comparator { o1, o2 -> definition.indexOf(o1) - definition.indexOf(o2) }
+}
 
 class CachedProperty<T, V>(val getCurrentVersionId: () -> Int, val compute: () -> V) : ReadOnlyProperty<T, V> {
     private var cachedVersionId: Int? = null

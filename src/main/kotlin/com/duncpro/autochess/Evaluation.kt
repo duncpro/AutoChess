@@ -37,15 +37,15 @@ class IterativeDeepeningSearchResult(val finalResult: DfsSearchResult, val final
  * A search of depth [minDepth] will be carried out regardless of any time-constraints. The deadline will
  * only be honored after the min-depth search is complete.
  */
-fun search(fromPosition: Position, deadline: Instant, minDepth: Int = 1): IterativeDeepeningSearchResult {
+fun search(fromPosition: Position,  minDepth: Int, deadline: Instant, transpositionTable: TranspositionTable): IterativeDeepeningSearchResult {
     // Before embarking on any time-constrained searches, at least perform a search of minDepth,
-    var dfsResult = searchDeep(fromPosition, minDepth)!!
+    var dfsResult = searchDeep(fromPosition, minDepth, transpositionTable)!!
 
     var depth = minDepth
     while (deadline.isAfter(Instant.now())) {
         // If the returned tree is null then the deadline has been reached, therefore break and use the result
         // computed by the last iteration.
-        dfsResult = searchDeep(fromPosition, depth + 1, deadline) ?: break
+        dfsResult = searchDeep(fromPosition, depth + 1, transpositionTable, deadline) ?: break
         depth++
 
         // If children is null then depth is equal to zero therefore no children were scored. See searchDeep
@@ -57,6 +57,11 @@ fun search(fromPosition: Position, deadline: Instant, minDepth: Int = 1): Iterat
             assert(depth == 1)
             break
         }
+
+        // We have achieved a search depth large enough to compute every possible outcome of the game.
+        if (dfsResult.isTreeComplete) {
+            break
+        }
     }
 
     return IterativeDeepeningSearchResult(dfsResult, depth)
@@ -65,6 +70,7 @@ fun search(fromPosition: Position, deadline: Instant, minDepth: Int = 1): Iterat
 class DfsSearchResult(
     val children: Map<EffectfulMove, Int>?,
     val score: Int,
+    val isTreeComplete: Boolean
 )
 
 /**
@@ -92,16 +98,19 @@ class DfsSearchResult(
  */
 fun searchDeep(fromPosition: Position,
                depthLeft: Int,
+               transpositionTable: TranspositionTable,
                deadline: Instant? = null,
                alpha: Int = Int.MIN_VALUE,
                beta: Int = Int.MAX_VALUE
 ): DfsSearchResult? {
-    // If the maximum depth has been reached then simply perform a heuristic score evaluation.
-    if (depthLeft <= 0) return DfsSearchResult(null, heuristicScore(fromPosition))
-    if (fromPosition.isGameOver) return DfsSearchResult(emptyMap(), heuristicScore(fromPosition))
     if (deadline?.isBefore(Instant.now()) == true) return null
+    if (fromPosition.possibleMoves.isEmpty()) return DfsSearchResult(emptyMap(), heuristicScore(fromPosition), true)
+
+    // If the maximum depth has been reached and the game is not over, simply perform a heuristic score evaluation.
+    if (depthLeft <= 0) return DfsSearchResult(null, heuristicScore(fromPosition), false)
 
     var thisScore: Int = alpha
+    var isTreeComplete = true
     val children = mutableMapOf<EffectfulMove, Int>()
 
     // Compute all possible moves we can make
@@ -112,11 +121,21 @@ fun searchDeep(fromPosition: Position,
         // Now compute all possible moves our opponent can make.
         // While searchDown may not actually reach the real terminus of the game, it is assumed to.
         // Therefore, the scores returned by this function should be treated as exact values, not approximations.
-        val childEvaluation: Int = when (val transpositionTableResult = TRANSPOSITION_TABLE[childPosition, depthLeft - 1]) {
-            is TranspositionTable.Hit -> transpositionTableResult.score
-            is TranspositionTable.Miss -> searchDeep(
+
+        val childScore: Int
+
+        val cachedResult = transpositionTable[childPosition, depthLeft - 1]
+        if (cachedResult is TranspositionTable.Hit) {
+            childScore = cachedResult.score
+            // Only non-terminal positions are cached. Therefore, if we find some position within the cache,
+            // the tree must not complete, at least on this branch. A deeper search is required to find the
+            // leaves of this branch.
+            isTreeComplete = false
+        } else {
+            val dfsResult = searchDeep(
                 fromPosition = childPosition,
                 depthLeft = depthLeft - 1,
+                transpositionTable,
                 deadline,
                 // This search is from the perspective of our opponent. Therefore, the opponent is now the maximized
                 // player, while we are the minimized player.
@@ -129,13 +148,15 @@ fun searchDeep(fromPosition: Position,
                 // disadvantageous to our opponent. Therefore, the sign of thisScore is changed, so that it properly
                 // describes the advantageous-ness/disadvantageous-ness from the perspective of our opponent.
                 beta = thisScore * -1,
-            )?.score ?: return null
+            ) ?: return null // if null then the deadline has been reached, the search terminated prematurely.
+            childScore = dfsResult.score
+            isTreeComplete = isTreeComplete && dfsResult.isTreeComplete
         }
 
-        children[move] = childEvaluation * -1
+        children[move] = childScore * -1
 
         // The score of this move is equal to the opposite of the best move our opponent can make after this move.
-        thisScore = max(thisScore, childEvaluation * -1)
+        thisScore = max(thisScore, childScore * -1)
 
 
         // The maximized player will always follow a line which has a score greater than or equal to the maximum score
@@ -150,7 +171,7 @@ fun searchDeep(fromPosition: Position,
         if (thisScore >= beta) break
     }
 
-    TRANSPOSITION_TABLE[fromPosition, depthLeft] = thisScore
+    transpositionTable[fromPosition, depthLeft] = thisScore
 
-    return DfsSearchResult(children, thisScore)
+    return DfsSearchResult(children, thisScore, isTreeComplete)
 }

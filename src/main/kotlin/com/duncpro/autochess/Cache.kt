@@ -5,10 +5,13 @@ import com.duncpro.autochess.PieceType.*
 import com.duncpro.autochess.TranspositionTable.Hit
 import com.duncpro.autochess.TranspositionTable.Miss
 import com.duncpro.autochess.behavior.EffectfulMove
+import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.ConcurrentMap
 
 sealed interface TransposablePiece {
     val color: Color
 }
+
 data class TransposablePawn(override val color: Color, val isEnpassantVulnerable: Boolean): TransposablePiece
 @JvmInline value class TransposableKnight(override val color: Color): TransposablePiece
 @JvmInline value class TransposableRook(override val color: Color): TransposablePiece
@@ -16,7 +19,9 @@ data class TransposablePawn(override val color: Color, val isEnpassantVulnerable
 @JvmInline value class TransposableQueen(override val color: Color): TransposablePiece
 @JvmInline value class TransposableKing(override val color: Color): TransposablePiece
 
-data class TransposablePosition(val pieceArrangement: Map<Cell, TransposablePiece>, val whosTurn: Color)
+data class TransposablePosition(val pieceArrangement: Map<Cell, TransposablePiece>, val whosTurn: Color) {
+    val pieces get() = pieceArrangement.values
+}
 
 fun TransposablePosition(position: Position): TransposablePosition {
     val pieceArrangement = HashMap<Cell, TransposablePiece>(position.filledCells.size)
@@ -47,7 +52,7 @@ fun TransposablePosition(position: Position): TransposablePosition {
 }
 
 class HashMapTranspositionTable: TranspositionTable {
-    private val hashMap: MutableMap<Key, Int> = HashMap()
+    private val hashMap: ConcurrentMap<Key, Int> = ConcurrentHashMap()
 
     override operator fun get(position: Position, depth: Int): TranspositionTable.Result {
         val key = Key(TransposablePosition(position), depth)
@@ -78,5 +83,3 @@ interface TranspositionTable {
     value class Hit(val score: Int): Result
     object Miss: Result
 }
-
-val TRANSPOSITION_TABLE: TranspositionTable = HashMapTranspositionTable()

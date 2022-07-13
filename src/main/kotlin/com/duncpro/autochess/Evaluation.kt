@@ -1,6 +1,6 @@
 package com.duncpro.autochess
 
-import com.duncpro.autochess.behavior.EffectfulMove
+import com.duncpro.autochess.behavior.SynchronousEffect
 import java.time.Instant
 import kotlin.math.max
 
@@ -30,7 +30,7 @@ fun heuristicScore(position: Position): Int {
     return materialDifference(position)
 }
 
-class IterativeDeepeningSearchResult(val finalResult: DfsSearchResult, val finalDepth: Int)
+class IterativeDeepeningSearchResult(val deepestResult: DfsSearchResult, val finalDepth: Int)
 
 /**
  * Performs an iteratively deepening search from the given position until the given [deadline] has been reached.
@@ -68,7 +68,7 @@ fun search(fromPosition: Position,  minDepth: Int, deadline: Instant, transposit
 }
 
 class DfsSearchResult(
-    val children: Map<EffectfulMove, Int>?,
+    val children: Map<SynchronousEffect, Int>?,
     val score: Int,
     val isTreeComplete: Boolean
 )
@@ -88,7 +88,7 @@ class DfsSearchResult(
  * of the position but without any child moves ([DfsSearchResult.children] = null). Such a result is typically only
  * useful in the context of a deeper search.
  *
- * @param alpha The minimum score the maximized player is assured of. If no alpha is known, assume that the minimum score
+ * @param parentScore The minimum score the maximized player is assured of. If no alpha is known, assume that the minimum score
  *  the maximized player is assured of is negative infinity. In more literal terms, the maximized player is not assured
  *  of achieving any good score. Intended for recursive use internally.
  *
@@ -100,21 +100,21 @@ fun searchDeep(fromPosition: Position,
                depthLeft: Int,
                transpositionTable: TranspositionTable,
                deadline: Instant? = null,
-               alpha: Int = Int.MIN_VALUE,
+               parentScore: Int = Int.MIN_VALUE + 1,
                beta: Int = Int.MAX_VALUE
 ): DfsSearchResult? {
     if (deadline?.isBefore(Instant.now()) == true) return null
-    if (fromPosition.possibleMoves.isEmpty()) return DfsSearchResult(emptyMap(), heuristicScore(fromPosition), true)
+    if (fromPosition.legalMoves.isEmpty()) return DfsSearchResult(emptyMap(), heuristicScore(fromPosition), true)
 
     // If the maximum depth has been reached and the game is not over, simply perform a heuristic score evaluation.
     if (depthLeft <= 0) return DfsSearchResult(null, heuristicScore(fromPosition), false)
 
-    var thisScore: Int = alpha
+    var thisScore: Int = parentScore
     var isTreeComplete = true
-    val children = mutableMapOf<EffectfulMove, Int>()
+    val children = mutableMapOf<SynchronousEffect, Int>()
 
     // Compute all possible moves we can make
-    for (move in fromPosition.possibleMoves) {
+    for (move in fromPosition.legalMoves) {
         // Now create a new position where we've made that move
         val childPosition = fromPosition.branch(move)
 
@@ -126,11 +126,8 @@ fun searchDeep(fromPosition: Position,
 
         val cachedResult = transpositionTable[childPosition, depthLeft - 1]
         if (cachedResult is TranspositionTable.Hit) {
-            childScore = cachedResult.score
-            // Only non-terminal positions are cached. Therefore, if we find some position within the cache,
-            // the tree must not complete, at least on this branch. A deeper search is required to find the
-            // leaves of this branch.
-            isTreeComplete = false
+            childScore = cachedResult.cachedScore.score
+            isTreeComplete = isTreeComplete && cachedResult.cachedScore.isTreeComplete
         } else {
             val dfsResult = searchDeep(
                 fromPosition = childPosition,
@@ -142,7 +139,7 @@ fun searchDeep(fromPosition: Position,
                 // The pre-assigned value is in terms of the move's advantage to us, and a move that is advantageous to us is
                 // disadvantageous to our opponent. Therefore, the sign is changed so that the quantity properly
                 // describes the advantageous-ness/disadvantageous-ness from the perspective of our opponent.
-                alpha = beta * -1,
+                parentScore = beta * -1,
 
                 // thisScore is in terms of the move's advantage to us, and a move that is advantageous to us is
                 // disadvantageous to our opponent. Therefore, the sign of thisScore is changed, so that it properly
@@ -158,20 +155,13 @@ fun searchDeep(fromPosition: Position,
         // The score of this move is equal to the opposite of the best move our opponent can make after this move.
         thisScore = max(thisScore, childScore * -1)
 
-
-        // The maximized player will always follow a line which has a score greater than or equal to the maximum score
-        // the minimized player is assured of. Whenever the maximum score the minimized player is assured
-        // of becomes less than or equal to the minimum score the maximized player is assured of, do not continue this line, because the minimized player will
-        // never actually play it. Likewise, the maximized player will never follow a line which
-
         // alpha > beta
-        // minimum score which the maximized player is assured of >= maximum score with the minimized player is assured of
+        // minimum score which the maximized player is assured of > maximum score with the minimized player is assured of
         // alpha being the minimum score for the maximized player
         // beta being the maximum score for the minimized player
         if (thisScore >= beta) break
     }
 
-    transpositionTable[fromPosition, depthLeft] = thisScore
-
+    transpositionTable.set(fromPosition, depthLeft, thisScore, isTreeComplete)
     return DfsSearchResult(children, thisScore, isTreeComplete)
 }

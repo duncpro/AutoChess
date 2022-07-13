@@ -3,7 +3,7 @@ package com.duncpro.autochess.behavior
 import com.duncpro.autochess.*
 
 object KingBehavior: PieceBehavior {
-    override fun invoke(origin: Cell, ownColor: Color, board: Position): Set<EffectfulMove> {
+    override fun invoke(origin: Cell, ownColor: Color, board: Position): Set<SynchronousEffect> {
         // (-1,-1)
         // (-1, 0)
         // (-1, 1)
@@ -12,7 +12,7 @@ object KingBehavior: PieceBehavior {
         // (1, -1)
         // (1,  0)
         // (1,  1)
-        val moves = LinkedHashSet<EffectfulMove>(8)
+        val moves = LinkedHashSet<SynchronousEffect>(8)
         for (fileOffset in -1..1) {
             for (rankOffset in -1..1) {
                 if (fileOffset == 0 && rankOffset == 0) continue

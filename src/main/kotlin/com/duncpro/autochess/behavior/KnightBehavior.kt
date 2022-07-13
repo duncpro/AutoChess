@@ -4,8 +4,8 @@ import com.duncpro.autochess.*
 import com.duncpro.autochess.BoardDimension.*
 
 object KnightBehavior: PieceBehavior {
-    override fun invoke(origin: Cell, ownColor: Color, board: Position): Set<EffectfulMove> {
-        val moves = LinkedHashSet<EffectfulMove>(8)
+    override fun invoke(origin: Cell, ownColor: Color, board: Position): Set<SynchronousEffect> {
+        val moves = LinkedHashSet<SynchronousEffect>(8)
 
         castL(origin, FILE, Direction.HIGHER, Direction.HIGHER)
             ?.let { convertStepToMove(origin, ownColor, board, it) }

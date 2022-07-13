@@ -3,8 +3,8 @@ package com.duncpro.autochess.behavior
 import com.duncpro.autochess.*
 
 object BishopBehavior: PieceBehavior {
-    override fun invoke(origin: Cell, ownColor: Color, board: Position): Set<EffectfulMove> {
-        val moves = LinkedHashSet<EffectfulMove>()
+    override fun invoke(origin: Cell, ownColor: Color, board: Position): Set<SynchronousEffect> {
+        val moves = LinkedHashSet<SynchronousEffect>()
 
         val blackKingside = castDiagonal(origin, Direction.HIGHER, Direction.HIGHER)
 

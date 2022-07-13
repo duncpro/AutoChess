@@ -24,6 +24,18 @@ fun fileLetter(file: Int) = when (file) {
     else -> throw IllegalArgumentException()
 }
 
+fun fileIndex(file: Char): Int? = when(file) {
+    'A' -> 0
+    'B' -> 1
+    'C' -> 2
+    'D' -> 3
+    'E' -> 4
+    'F' -> 5
+    'G' -> 6
+    'H' -> 7
+    else -> null
+}
+
 /**
  * Represents a cell on a chess board. There are 64 (8 files * 8 columns) cells on standard chess board.
  * Cells are zero-indexed, therefore instances of this class should only be constructed with an index value
@@ -55,6 +67,13 @@ fun cellOrNull(file: Int, rank: Int): Cell? {
     if (file < 0 || file > 7) return null
     if (rank < 0 || rank > 7) return null
     return Cell(file, rank)
+}
+
+fun parseCell(label: String): Cell? {
+    return cellOrNull(
+        file = fileIndex(label[0]) ?: return null,
+        rank = label[1].digitToInt() - 1
+    )
 }
 
 enum class Color {
@@ -116,11 +135,11 @@ abstract class Position {
      * Determines if the game is over by checking if the player with color [whoseTurn] has no legal moves to make.
      * This could be indicative of a stalemate, or a checkmate.
      */
-    val isGameOver get() = possibleMoves.isEmpty()
+    val isGameOver get() = legalMoves.isEmpty()
 
-    val isStalemate get() = possibleMoves.isEmpty() && !underAttack.contains(locateKing(whoseTurn))
+    val isStalemate get() = legalMoves.isEmpty() && !underAttack.contains(locateKing(whoseTurn))
 
-    val isCheckmate get() = possibleMoves.isEmpty() && underAttack.contains(locateKing(whoseTurn))
+    val isCheckmate get() = legalMoves.isEmpty() && underAttack.contains(locateKing(whoseTurn))
 
     fun locateKing(color: Color): Cell = pieces.stream()
         .filter { piece -> piece.aesthetic == AestheticPiece(PieceType.KING, color) }
@@ -128,12 +147,24 @@ abstract class Position {
         .findFirst()
         .orElseThrow()
 
+
     /**
-     * Creates [Position] which is identical to this one, except the given move has been applied.
-     * This function is implemented using [MaskedPosition] and therefore does not incur the performance
-     * hit of copying the entire board.
+     * Interprets the given [Translation] as a move in chess, inferring the legality and side effects of the translation
+     * using the current state of the board. If this translation is not legal, then null is returned.
      */
-    fun branch(move: EffectfulMove): Position {
+    fun branch(translation: Translation): Position? {
+        val move = this.legalMoves.singleOrNull { move -> move.effects.contains(translation) } ?: return null
+        return branch(move)
+    }
+
+    /**
+     * Creates [Position] which is identical to this one, except the given [SynchronousEffect] has been applied.
+     * This function is implemented using [MaskedPosition] and therefore does not incur the performance
+     * hit of copying the entire board. This function performs no validation on the given [SynchronousEffect].
+     * The effects will be applied regardless of their legality. For instance one might pass an effect which
+     * does not represent a legal move.
+     */
+    fun branch(move: SynchronousEffect): Position {
         val mask = HashMap<Cell, PlacedPiece?>()
 
         for (effect in move.effects) {
@@ -152,15 +183,22 @@ abstract class Position {
     }
 
     /**
-     * The set of [EffectfulMove]s which can legally be made by [whoseTurn] without inflicting self-check.
+     * The set of [SynchronousEffect]s which can legally be made by [whoseTurn] without inflicting self-check.
      * This field is cached and therefore repeated accesses will not cause a significant loss in performance.
      */
-    val possibleMoves: Set<EffectfulMove> by CachedProperty(
+    val legalMoves: Set<SynchronousEffect> by CachedProperty(
         getCurrentVersionId = { this.nextMove },
         compute = {
             pieces.stream()
                 .filter { ownPiece -> ownPiece.aesthetic.color == this.whoseTurn }
                 .flatMap { ownPiece -> ownPiece.moves.stream() }
+                // A move which actually takes the opponent's king is not legal.
+                // Threatening the king with take is legal, but not actually doing it.
+                // Therefore, such moves must be filtered out.
+                .filter { move -> move.effects.stream()
+                    .filterIsInstance<Take>()
+                    .noneMatch { take -> take.target == this.locateKing(whoseTurn.opposite) }
+                }
                 .filter { move ->
                     val inNextPosition = this.branch(move)
                     val king = inNextPosition.locateKing(this.whoseTurn)
@@ -179,11 +217,11 @@ abstract class Position {
     )
 
     /**
-     * This class encapsulates a [AestheticPiece], it's position on the board represented as a [Cell], and all [EffectfulMove]s
+     * This class encapsulates a [AestheticPiece], it's position on the board represented as a [Cell], and all [SynchronousEffect]s
      * which the piece is capable of making given its current position and the board's current state. Instances
      * of this class are exclusively produced by the private property [pieces].
      */
-    data class CapablePiece(val location: Cell, val placed: PlacedPiece, val moves: Set<EffectfulMove>) {
+    data class CapablePiece(val location: Cell, val placed: PlacedPiece, val moves: Set<SynchronousEffect>) {
         val aesthetic: AestheticPiece get() = placed.aesthetic
     }
 

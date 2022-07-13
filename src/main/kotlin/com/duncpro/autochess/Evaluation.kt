@@ -1,16 +1,16 @@
 package com.duncpro.autochess
 
-import com.duncpro.autochess.behavior.SynchronousEffect
+import com.duncpro.autochess.behavior.SynchronousAction
 import java.time.Instant
 import kotlin.math.max
 
 val PieceType.value: Int get() = when (this) {
-    PieceType.ROOK -> 5
-    PieceType.KNIGHT -> 3
-    PieceType.BISHOP -> 3
-    PieceType.QUEEN -> 9
+    PieceType.ROOK -> 10
+    PieceType.KNIGHT -> 6
+    PieceType.BISHOP -> 6
+    PieceType.QUEEN -> 18
     PieceType.KING -> 0
-    PieceType.PAWN -> 1
+    PieceType.PAWN -> 2
 }
 
 fun materialDifference(position: Position): Int {
@@ -27,7 +27,17 @@ fun materialDifference(position: Position): Int {
 
 fun heuristicScore(position: Position): Int {
     if (position.isCheckmate) return (Int.MIN_VALUE + 1)
-    return materialDifference(position)
+
+    val md = materialDifference(position)
+
+    // A draw is considered barely advantageous if we are loosing in terms of material difference.
+    // Any move which results in a material difference in our favor is better than a draw.
+    if (position.isDraw && md < 0) return 1
+
+    // From our perspective a draw is not advantageous if the material difference is even, or we are up by at least 1.
+    // Still a draw is better than being down a piece.
+    if (position.isDraw && md >= 0) return -1
+    return md
 }
 
 class IterativeDeepeningSearchResult(val deepestResult: DfsSearchResult, val finalDepth: Int)
@@ -68,7 +78,7 @@ fun search(fromPosition: Position,  minDepth: Int, deadline: Instant, transposit
 }
 
 class DfsSearchResult(
-    val children: Map<SynchronousEffect, Int>?,
+    val children: Map<SynchronousAction, Int>?,
     val score: Int,
     val isTreeComplete: Boolean
 )
@@ -111,7 +121,7 @@ fun searchDeep(fromPosition: Position,
 
     var thisScore: Int = parentScore
     var isTreeComplete = true
-    val children = mutableMapOf<SynchronousEffect, Int>()
+    val children = mutableMapOf<SynchronousAction, Int>()
 
     // Compute all possible moves we can make
     for (move in fromPosition.legalMoves) {

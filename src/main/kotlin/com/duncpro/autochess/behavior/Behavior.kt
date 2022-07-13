@@ -3,19 +3,21 @@ package com.duncpro.autochess.behavior
 import com.duncpro.autochess.*
 import com.duncpro.autochess.PieceType.*
 
-sealed interface Effect
+sealed interface Action
 
-data class Spawn(val piece: AestheticPiece, val point: Cell): Effect
+data class Spawn(val piece: AestheticPiece, val point: Cell): Action
 
-data class Take(val target: Cell): Effect
+data class Take(val target: Cell): Action
 
-data class Translation(val origin: Cell, val destination: Cell): Effect
+data class Translate(val origin: Cell, val destination: Cell): Action
 
-data class SynchronousEffect(val effects: List<Effect>) {
-    constructor(vararg effects: Effect) : this(effects.toList())
+object ClaimDraw: Action
+
+data class SynchronousAction(val actions: List<Action>) {
+    constructor(vararg actions: Action) : this(actions.toList())
 }
 
-typealias PieceBehavior = (origin: Cell, ownColor: Color, board: Position) -> Set<SynchronousEffect>
+typealias PieceBehavior = (origin: Cell, ownColor: Color, board: Position) -> Set<SynchronousAction>
 
 /**
  * Some standard pieces behave similarly in terms of their effects.
@@ -24,19 +26,19 @@ typealias PieceBehavior = (origin: Cell, ownColor: Color, board: Position) -> Se
  * and a piece of a different color can be taken, but the path must end at that square.
  *
  * This function converts so-called "step sequences", that is, the rays produced by these pieces,
- * to a set of [SynchronousEffect]s.
+ * to a set of [SynchronousAction]s.
  *
  * The given [origin] described the [Cell] which the piece to which this step sequence belongs originally inhabited.
  * The [stepSequence] is a list of [Cell]s which fall along the piece's path.
  */
-fun convertStepSequenceToMoves(origin: Cell, ownColor: Color, board: Position, stepSequence: List<Cell>): Set<SynchronousEffect> {
-    val moves = mutableSetOf<SynchronousEffect>()
+fun convertStepSequenceToMoves(origin: Cell, ownColor: Color, board: Position, stepSequence: List<Cell>): Set<SynchronousAction> {
+    val moves = mutableSetOf<SynchronousAction>()
 
     for (step in stepSequence) {
         val currentOccupant = board[step]
 
         if (currentOccupant == null) {
-            moves.add(SynchronousEffect(Translation(origin, step)))
+            moves.add(SynchronousAction(Translate(origin, step)))
             continue
         }
 
@@ -46,9 +48,9 @@ fun convertStepSequenceToMoves(origin: Cell, ownColor: Color, board: Position, s
 
         // Once a piece encounters a piece of an opposing color, the path must end.
         if (currentOccupant.aesthetic.color == ownColor.opposite) {
-            moves.add(SynchronousEffect(
+            moves.add(SynchronousAction(
                 Take(step),
-                Translation(origin, step)
+                Translate(origin, step)
             ))
             break
         }

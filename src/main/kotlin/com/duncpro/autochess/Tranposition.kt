@@ -7,16 +7,29 @@ import com.duncpro.autochess.TranspositionTable.Miss
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.ConcurrentMap
 
-sealed interface TransposablePiece {
-    val color: Color
+open class TransposablePiece(val aesthetic: AestheticPiece) {
+    override fun equals(other: Any?) = implementClassEquality<TransposablePiece>(other) { otherPiece ->
+        if (otherPiece.aesthetic != this.aesthetic) return@implementClassEquality false
+        return@implementClassEquality true
+    }
+
+    override fun hashCode(): Int {
+        return aesthetic.hashCode()
+    }
 }
 
-data class TransposablePawn(override val color: Color, val isEnpassantVulnerable: Boolean): TransposablePiece
-@JvmInline value class TransposableKnight(override val color: Color): TransposablePiece
-@JvmInline value class TransposableRook(override val color: Color): TransposablePiece
-@JvmInline value class TransposableBishop(override val color: Color): TransposablePiece
-@JvmInline value class TransposableQueen(override val color: Color): TransposablePiece
-@JvmInline value class TransposableKing(override val color: Color): TransposablePiece
+class TransposablePawn(color: Color, val isEnpassantVulnerable: Boolean):
+    TransposablePiece(AestheticPiece(PAWN, color)) {
+    override fun equals(other: Any?) = implementClassEquality<TransposablePawn>(other) { otherPawn ->
+        if (otherPawn.aesthetic.color != this.aesthetic.color) return@implementClassEquality false
+        if (otherPawn.isEnpassantVulnerable != this.isEnpassantVulnerable) return@implementClassEquality false
+        return@implementClassEquality true
+    }
+
+    override fun hashCode(): Int {
+        return 31 * aesthetic.hashCode() + isEnpassantVulnerable.hashCode()
+    }
+}
 
 data class TransposablePosition(val pieceArrangement: Map<Cell, TransposablePiece>, val whosTurn: Color)
 
@@ -26,11 +39,6 @@ fun TransposablePosition(position: Position): TransposablePosition {
     for (piece in position.pieces) {
         val transposablePiece =
             when (piece.aesthetic.type) {
-                KING -> TransposableKing(piece.aesthetic.color)
-                QUEEN -> TransposableQueen(piece.aesthetic.color)
-                ROOK -> TransposableRook(piece.aesthetic.color)
-                KNIGHT -> TransposableKnight(piece.aesthetic.color)
-                BISHOP -> TransposableBishop(piece.aesthetic.color)
                 PAWN -> {
                     val enpassantVulnerableRank = when (piece.aesthetic.color) {
                         WHITE -> 3
@@ -40,6 +48,7 @@ fun TransposablePosition(position: Position): TransposablePosition {
                             piece.location.rank == enpassantVulnerableRank
                     TransposablePawn(piece.aesthetic.color, isEnpassantVulnerable)
                 }
+                else -> TransposablePiece(piece.aesthetic)
             }
 
         pieceArrangement[piece.location] = transposablePiece
@@ -52,12 +61,12 @@ class HashMapTranspositionTable: TranspositionTable {
     private val hashMap: ConcurrentMap<Key, TranspositionTable.CachedScore> = ConcurrentHashMap()
 
     override operator fun get(position: Position, depth: Int): TranspositionTable.Result {
-        val key = Key(TransposablePosition(position), depth)
+        val key = Key(position.transposable, depth)
         return hashMap[key]?.let(::Hit) ?: Miss
     }
 
     override fun set(position: Position, depth: Int, score: Int, isTreeComplete: Boolean) {
-        val key = Key(TransposablePosition(position), depth)
+        val key = Key(position.transposable, depth)
         hashMap[key] = TranspositionTable.CachedScore(score, isTreeComplete)
     }
 
@@ -78,7 +87,6 @@ interface TranspositionTable {
     data class CachedScore(val score: Int, val isTreeComplete: Boolean)
 
     sealed interface Result
-    @JvmInline
-    value class Hit(val cachedScore: CachedScore): Result
+    @JvmInline value class Hit(val cachedScore: CachedScore): Result
     object Miss: Result
 }

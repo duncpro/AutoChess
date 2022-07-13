@@ -1,8 +1,7 @@
 package com.duncpro.autochess
 
-import com.duncpro.autochess.behavior.Translation
+import com.duncpro.autochess.behavior.Translate
 import java.time.Instant
-import java.util.*
 
 fun main() = selfPlay()
 
@@ -12,7 +11,7 @@ fun selfPlay() {
 
     position.printBoard(System.out)
     while (!position.isGameOver) {
-        val result = search(position, 3, Instant.now().plusSeconds(15), transpositionTable)
+        val result = search(position, 4, Instant.now().plusSeconds(15), transpositionTable)
 
         val bestMove = result.deepestResult.children!!
             .entries
@@ -72,10 +71,10 @@ fun versusHuman(humanColor: Color) = System.`in`.bufferedReader().use { reader -
     if (position.isCheckmate) println("${position.whoseTurn.opposite} wins")
 }
 
-fun parseTranslation(moveLabel: String): Translation? {
+fun parseTranslation(moveLabel: String): Translate? {
     val sanitizedMoveLabel = moveLabel.uppercase().replace("\n", "")
     if (sanitizedMoveLabel.length != 4) return null
     val from = parseCell(sanitizedMoveLabel.substring(0, 2)) ?: return null
     val to = parseCell(sanitizedMoveLabel.substring(2, 4)) ?: return null
-    return Translation(from, to)
+    return Translate(from, to)
 }

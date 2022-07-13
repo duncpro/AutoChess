@@ -6,8 +6,8 @@ import java.util.stream.Collectors
 import java.util.stream.Stream
 
 object PawnBehavior: PieceBehavior {
-    override fun invoke(origin: Cell, ownColor: Color, board: Position): Set<SynchronousEffect> {
-        val moves = LinkedHashSet<SynchronousEffect>(4)
+    override fun invoke(origin: Cell, ownColor: Color, board: Position): Set<SynchronousAction> {
+        val moves = LinkedHashSet<SynchronousAction>(4)
         doubleStart(origin, ownColor, board)?.let(moves::add)
         advance(origin, ownColor, board)?.let(moves::add)
         take(origin, ownColor, board)?.let(moves::addAll)
@@ -15,7 +15,7 @@ object PawnBehavior: PieceBehavior {
         return moves
     }
 
-    private fun doubleStart(origin: Cell, ownColor: Color, board: Position): SynchronousEffect? {
+    private fun doubleStart(origin: Cell, ownColor: Color, board: Position): SynchronousAction? {
         val initialRank = when (ownColor) {
             BLACK -> 6
             WHITE -> 1
@@ -37,10 +37,10 @@ object PawnBehavior: PieceBehavior {
 
         if (board[hoppedOver] != null) return null
 
-        return SynchronousEffect(Translation(origin, destination))
+        return SynchronousAction(Translate(origin, destination))
     }
 
-    private fun wrapWithQueenSpawnIfNecessary(destination: Cell, ownColor: Color, vararg prefixEffects: Effect): SynchronousEffect {
+    private fun wrapWithQueenSpawnIfNecessary(destination: Cell, ownColor: Color, vararg prefixActions: Action): SynchronousAction {
         val queenSpawnRank = when (ownColor) {
             BLACK -> 0
             WHITE -> 7
@@ -49,31 +49,31 @@ object PawnBehavior: PieceBehavior {
         val spawnsQueen = queenSpawnRank == destination.rank
 
         return if (spawnsQueen) {
-            SynchronousEffect(*prefixEffects, Spawn(AestheticPiece(PieceType.QUEEN, ownColor), destination))
+            SynchronousAction(*prefixActions, Spawn(AestheticPiece(PieceType.QUEEN, ownColor), destination))
         } else {
-            SynchronousEffect(*prefixEffects)
+            SynchronousAction(*prefixActions)
         }
     }
 
-    private fun advance(origin: Cell, ownColor: Color, board: Position): SynchronousEffect? {
+    private fun advance(origin: Cell, ownColor: Color, board: Position): SynchronousAction? {
         val destination = origin.towardsColor(ownColor.opposite)!!
 
         if (board[destination] != null) return null
 
-        return wrapWithQueenSpawnIfNecessary(destination, ownColor, Translation(origin, destination))
+        return wrapWithQueenSpawnIfNecessary(destination, ownColor, Translate(origin, destination))
     }
 
-    private fun take(origin: Cell, ownColor: Color, board: Position): Set<SynchronousEffect>? {
+    private fun take(origin: Cell, ownColor: Color, board: Position): Set<SynchronousAction>? {
         val kingside = origin.towardsColor(ownColor.opposite)!!.towardsKingside()
         val queenside =  origin.towardsColor(ownColor.opposite)!!.towardsQueenside()
         return Stream.of(kingside, queenside)
             .filterNotNull()
             .filter { target -> board[target]?.aesthetic?.color == ownColor.opposite }
-            .map { target -> wrapWithQueenSpawnIfNecessary(target, ownColor, Take(target), Translation(origin, target)) }
+            .map { target -> wrapWithQueenSpawnIfNecessary(target, ownColor, Take(target), Translate(origin, target)) }
             .collect(Collectors.toSet())
     }
 
-    private fun enpassant(origin: Cell, ownColor: Color, board: Position): List<SynchronousEffect>? {
+    private fun enpassant(origin: Cell, ownColor: Color, board: Position): List<SynchronousAction>? {
         val enpassantOriginRank = when (ownColor) {
             WHITE -> 4
             BLACK -> 3
@@ -86,7 +86,7 @@ object PawnBehavior: PieceBehavior {
             .associateWith { target -> /* destination = */ target.towardsColor(ownColor)!! }
             .filter { (target, _) -> board[target]?.aesthetic == AestheticPiece(PieceType.PAWN, ownColor.opposite) }
             .filter { (target, _) -> board[target]!!.atMove == board.nextMove - 1 }
-            .map { (target, destination) -> SynchronousEffect(Take(target), Translation(origin, destination)) }
+            .map { (target, destination) -> SynchronousAction(Take(target), Translate(origin, destination)) }
             .toList()
     }
 }

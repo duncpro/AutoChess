@@ -14,9 +14,4 @@ internal class FoundationTest {
             }
         }
     }
-
-    @Test
-    fun testInLineClasses() {
-        assertNotEquals(TransposableKnight(Color.BLACK), TransposableBishop(Color.BLACK))
-    }
 }

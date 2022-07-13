@@ -3,8 +3,8 @@ package com.duncpro.autochess.behavior
 import com.duncpro.autochess.*
 
 object RookBehavior: PieceBehavior {
-    override fun invoke(origin: Cell, ownColor: Color, board: Position): Set<SynchronousEffect> {
-        val moves = LinkedHashSet<SynchronousEffect>()
+    override fun invoke(origin: Cell, ownColor: Color, board: Position): Set<SynchronousAction> {
+        val moves = LinkedHashSet<SynchronousAction>()
 
         val towardsKingside = castLine(origin.file, 7)
             .map { file -> Cell(file, origin.rank) }

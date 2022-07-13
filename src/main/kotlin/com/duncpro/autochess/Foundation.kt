@@ -4,6 +4,7 @@ import com.duncpro.autochess.BoardDimension.*
 import com.duncpro.autochess.Color.*
 import com.duncpro.autochess.behavior.*
 import java.util.stream.Collectors
+import java.util.stream.Stream
 
 enum class BoardDimension { FILE, RANK }
 
@@ -102,166 +103,20 @@ data class PlacedPiece(val aesthetic: AestheticPiece, val atMove: Int) {
     val isOriginalPosition: Boolean = atMove == -1
 }
 
-/**
- * Represents a chess board at a distinct instant in time. More specifically at the move with index [nextMove].
- * Implementations of this class may or may not be mutable, therefore it is possible for the [nextMove], [whoseTurn],
- * and board state of a position to change. [MaskedPosition] provides an immutable implementation of this interface.
- */
-abstract class Position {
-    abstract val nextMove: Int
+class Position(
+    val previous: Position? = null,
+    private val mask: Map<Cell, PlacedPiece?>,
+    val agreedToDraw: Boolean = false
+) {
+    val nextMove: Int = (previous?.nextMove ?: -1) + 1
 
-    val whoseTurn get() = Color.values()[nextMove % 2]
-
-    abstract operator fun get(cell: Cell): PlacedPiece?
-
-    /**
-     * The set of all pieces owned by [whoseTurn] which are under immediate attack by the opponent.
-     * This field is cached and therefore repeated accesses will not cause a significant performance hit.
-     */
-    val underAttack: Set<Cell> by CachedProperty(
-        getCurrentVersionId = { this.nextMove },
-        compute = {
-            pieces.stream()
-                .filter { capablePiece -> capablePiece.aesthetic.color == this.whoseTurn.opposite }
-                .flatMap { capablePiece -> capablePiece.moves.stream() }
-                .flatMap { move -> move.effects.stream() }
-                .filterIsInstance<Take>()
-                .map(Take::target)
-                .collect(Collectors.toUnmodifiableSet())
-        }
-    )
-
-    /**
-     * Determines if the game is over by checking if the player with color [whoseTurn] has no legal moves to make.
-     * This could be indicative of a stalemate, or a checkmate.
-     */
-    val isGameOver get() = legalMoves.isEmpty()
-
-    val isStalemate get() = legalMoves.isEmpty() && !underAttack.contains(locateKing(whoseTurn))
-
-    val isCheckmate get() = legalMoves.isEmpty() && underAttack.contains(locateKing(whoseTurn))
-
-    fun locateKing(color: Color): Cell = pieces.stream()
-        .filter { piece -> piece.aesthetic == AestheticPiece(PieceType.KING, color) }
-        .map { piece -> piece.location }
-        .findFirst()
-        .orElseThrow()
-
-
-    /**
-     * Interprets the given [Translation] as a move in chess, inferring the legality and side effects of the translation
-     * using the current state of the board. If this translation is not legal, then null is returned.
-     */
-    fun branch(translation: Translation): Position? {
-        val move = this.legalMoves.singleOrNull { move -> move.effects.contains(translation) } ?: return null
-        return branch(move)
-    }
-
-    /**
-     * Creates [Position] which is identical to this one, except the given [SynchronousEffect] has been applied.
-     * This function is implemented using [MaskedPosition] and therefore does not incur the performance
-     * hit of copying the entire board. This function performs no validation on the given [SynchronousEffect].
-     * The effects will be applied regardless of their legality. For instance one might pass an effect which
-     * does not represent a legal move.
-     */
-    fun branch(move: SynchronousEffect): Position {
-        val mask = HashMap<Cell, PlacedPiece?>()
-
-        for (effect in move.effects) {
-            when (effect) {
-                is Take -> mask[effect.target] = null
-                is Translation -> {
-                    val piece = this[effect.origin]?.aesthetic ?: throw IllegalStateException()
-                    mask[effect.origin] = null
-                    mask[effect.destination] = PlacedPiece(piece, this.nextMove)
-                }
-                is Spawn -> mask[effect.point] = PlacedPiece(effect.piece, this.nextMove)
-            }
-        }
-
-        return MaskedPosition(this, mask)
-    }
-
-    /**
-     * The set of [SynchronousEffect]s which can legally be made by [whoseTurn] without inflicting self-check.
-     * This field is cached and therefore repeated accesses will not cause a significant loss in performance.
-     */
-    val legalMoves: Set<SynchronousEffect> by CachedProperty(
-        getCurrentVersionId = { this.nextMove },
-        compute = {
-            pieces.stream()
-                .filter { ownPiece -> ownPiece.aesthetic.color == this.whoseTurn }
-                .flatMap { ownPiece -> ownPiece.moves.stream() }
-                // A move which actually takes the opponent's king is not legal.
-                // Threatening the king with take is legal, but not actually doing it.
-                // Therefore, such moves must be filtered out.
-                .filter { move -> move.effects.stream()
-                    .filterIsInstance<Take>()
-                    .noneMatch { take -> take.target == this.locateKing(whoseTurn.opposite) }
-                }
-                .filter { move ->
-                    val inNextPosition = this.branch(move)
-                    val king = inNextPosition.locateKing(this.whoseTurn)
-
-                    // Make sure that this move doesn't put the king in check.
-                    !inNextPosition.pieces.stream()
-                        .filter { opponentPiece -> opponentPiece.aesthetic.color == this.whoseTurn.opposite }
-                        .flatMap { opponentPiece -> opponentPiece.moves.stream() }
-                        .flatMap { opponentMove-> opponentMove.effects.stream()  }
-                        .filterIsInstance<Take>()
-                        .map(Take::target)
-                        .anyMatch { target -> target == king }
-                }
-                .collect(Collectors.toUnmodifiableSet())
-        }
-    )
-
-    /**
-     * This class encapsulates a [AestheticPiece], it's position on the board represented as a [Cell], and all [SynchronousEffect]s
-     * which the piece is capable of making given its current position and the board's current state. Instances
-     * of this class are exclusively produced by the private property [pieces].
-     */
-    data class CapablePiece(val location: Cell, val placed: PlacedPiece, val moves: Set<SynchronousEffect>) {
-        val aesthetic: AestheticPiece get() = placed.aesthetic
-    }
-
-    /**
-     * The set of all possible moves which can be made from this position assuming that it is any player's turn.
-     * In other words, this contains all the moves which black can make, and all the moves which white can make.
-     */
-    val pieces: Set<CapablePiece> by CachedProperty(
-        getCurrentVersionId = { this.nextMove },
-        compute = {
-            filledCells.stream()
-                .map { cell -> cell to this[cell]!! }
-                .map { (cell, occupant) -> CapablePiece(cell, occupant, occupant.aesthetic.type.behavior(cell,
-                    occupant.aesthetic.color, this)) }
-                .collect(Collectors.toUnmodifiableSet())
-        }
-    )
-
-    abstract val filledCells: Set<Cell>
-
-    override fun toString(): String = this.toBoardString()
-}
-
-/**
- * A [Position] which masks another. This implementation should be used when performing search over the
- * position/move tree, since it avoids making a slow copy of the entire backing data structure.
- * The backing [Position], [under], must not change while this [MaskedPosition] is in use.
- * Such a change may not be accurately reflected. This class is intended for layered composition.
- */
-class MaskedPosition(private val under: Position,
-                     private val mask: Map<Cell, PlacedPiece?>): Position() {
-
-    override val nextMove = under.nextMove + 1
-
-    override operator fun get(cell: Cell): PlacedPiece? {
+    operator fun get(cell: Cell): PlacedPiece? {
         if (mask.containsKey(cell)) return mask[cell]
-        return under[cell]
+        if (previous == null) return null
+        return previous[cell]
     }
 
-    override val filledCells: Set<Cell> by lazy {
+    val filledCells: Set<Cell> by lazy {
         val list = LinkedHashSet<Cell>()
         val nulledCells = HashSet<Cell>()
 
@@ -273,64 +128,179 @@ class MaskedPosition(private val under: Position,
             }
         }
 
-        for (cell in under.filledCells) {
-            if (nulledCells.contains(cell)) continue
-            list.add(cell)
+        if (previous != null) {
+            for (cell in previous.filledCells) {
+                if (nulledCells.contains(cell)) continue
+                list.add(cell)
+            }
         }
 
         return@lazy list
     }
 
-    override fun equals(other: Any?): Boolean = implementInterfaceEquality<Position>(other) { otherPosition ->
-        if (otherPosition.filledCells.size != this.filledCells.size)
-            for (cell in filledCells) {
-                if (this[cell] != otherPosition[cell]) return false
+    val whoseTurn get() = Color.values()[nextMove % 2]
+
+    val transposable: TransposablePosition by lazy { TransposablePosition(this) }
+
+    /**
+     * The set of all pieces owned by [whoseTurn] which are under immediate attack by the opponent.
+     * This field is cached and therefore repeated accesses will not cause a significant performance hit.
+     */
+    val underAttack: Set<Cell> by lazy {
+        pieces.stream()
+            .filter { capablePiece -> capablePiece.aesthetic.color == this.whoseTurn.opposite }
+            .flatMap { capablePiece -> capablePiece.moves.stream() }
+            .flatMap { move -> move.actions.stream() }
+            .filterIsInstance<Take>()
+            .map(Take::target)
+            .collect(Collectors.toUnmodifiableSet())
+    }
+
+    /**
+     * Determines if the game is over by checking if the player with color [whoseTurn] has no legal moves to make.
+     * This could be indicative of a stalemate, or a checkmate.
+     */
+    val isGameOver get() = isDraw || isCheckmate
+
+    val isDraw get() = isStalemate || agreedToDraw
+
+    /**
+     * Determines if the game has concluded in a stalemate by checking if the player with color [whoseTurn] has no
+     * legal moves to make, and that player is not in check.
+     */
+    val isStalemate get() = legalMoves.isEmpty() && !underAttack.contains(locateKing(whoseTurn))
+
+    /**
+     * Determines if the game has concluded in a checkmate by checking if the player with color [whoseTurn] has
+     * no legal moves to make, and that player's king is in check.
+     */
+    val isCheckmate get() = legalMoves.isEmpty() && underAttack.contains(locateKing(whoseTurn))
+
+    fun locateKing(color: Color): Cell = pieces.stream()
+        .filter { piece -> piece.aesthetic == AestheticPiece(PieceType.KING, color) }
+        .map { piece -> piece.location }
+        .findFirst()
+        .orElseThrow()
+
+
+    /**
+     * Interprets the given [Translate] as a move in chess, inferring the legality and side effects of the translation
+     * using the current state of the board. If this translation is not legal, then null is returned.
+     */
+    fun branch(translate: Translate): Position? {
+        val move = this.legalMoves.singleOrNull { move -> move.actions.contains(translate) } ?: return null
+        return branch(move)
+    }
+
+    /**
+     * Creates [Position] which is identical to this one, except the given [SynchronousAction] has been applied.
+     * The action will be applied regardless of its legality. For instance one might pass an action which
+     * does not represent a legal move (like taking the opponent's king).
+     */
+    fun branch(move: SynchronousAction): Position {
+        val mask = HashMap<Cell, PlacedPiece?>()
+
+        for (effect in move.actions) {
+            when (effect) {
+                is Take -> mask[effect.target] = null
+                is Translate -> {
+                    val piece = this[effect.origin]?.aesthetic ?: throw IllegalStateException()
+                    mask[effect.origin] = null
+                    mask[effect.destination] = PlacedPiece(piece, this.nextMove)
+                }
+                is Spawn -> mask[effect.point] = PlacedPiece(effect.piece, this.nextMove)
+                is ClaimDraw -> return Position(this, emptyMap(), true)
             }
-        return@implementInterfaceEquality true
+        }
+
+        return Position(this, mask)
     }
 
-    override fun hashCode(): Int {
-        var result = 1
-        for (cell in filledCells) {
-            result = 31 * result + (this[cell]?.hashCode() ?: 0)
-        }
-        return result
+    /**
+     * The set of [SynchronousAction]s which can legally be made by [whoseTurn] without inflicting self-check.
+     * This field is cached and therefore repeated accesses do not imply a significant loss in performance.
+     */
+    val legalMoves: Set<SynchronousAction> by lazy {
+        val pieceMoves = pieces.stream()
+            .filter { ownPiece -> ownPiece.aesthetic.color == this.whoseTurn }
+            .flatMap { ownPiece -> ownPiece.moves.stream() }
+            // A move which actually takes the opponent's king is not legal.
+            // Threatening the king with take is legal, but not actually doing it.
+            // Therefore, such moves must be filtered out.
+            .filter { move -> move.actions.stream()
+                .filterIsInstance<Take>()
+                .noneMatch { take -> take.target == this.locateKing(whoseTurn.opposite) }
+            }
+            .filter { move ->
+                val inNextPosition = this.branch(move)
+                val king = inNextPosition.locateKing(this.whoseTurn)
+
+                // Make sure that this move doesn't put the king in check.
+                !inNextPosition.pieces.stream()
+                    .filter { opponentPiece -> opponentPiece.aesthetic.color == this.whoseTurn.opposite }
+                    .flatMap { opponentPiece -> opponentPiece.moves.stream() }
+                    .flatMap { opponentMove-> opponentMove.actions.stream()  }
+                    .filterIsInstance<Take>()
+                    .map(Take::target)
+                    .anyMatch { target -> target == king }
+            }
+            .collect(Collectors.toUnmodifiableSet())
+
+        val drawMove = if (DrawBehavior.canClaimDraw(this)) setOf(SynchronousAction(ClaimDraw)) else emptySet()
+
+        return@lazy pieceMoves union drawMove
+    }
+
+    /**
+     * This class encapsulates a [AestheticPiece], it's position on the board represented as a [Cell], and all
+     * [SynchronousAction]s which the piece is capable of making (naive) given its current position and the board's
+     * current state. Instances of this class should be produced exclusively by the property accessor [pieces].
+     * Note, [moves] will contain illegal self-checking actions. Therefore, this class is not a suitable mechanism
+     * for legal move discovery. For such a use case the [legalMoves] property accessor is provided.
+     */
+    data class CapablePiece(val location: Cell, val placed: PlacedPiece, val moves: Set<SynchronousAction>) {
+        val aesthetic: AestheticPiece get() = placed.aesthetic
+    }
+
+    /**
+     * The set of all pieces which are currently occupying the board.
+     * Iteration over this set is preferable to iteration over the entire board (all 64 cells) if possible.
+     */
+    val pieces: Set<CapablePiece> by lazy {
+        filledCells.stream()
+            .map { cell -> cell to this[cell]!! }
+            .map { (cell, occupant) -> CapablePiece(cell, occupant, occupant.aesthetic.type.behavior(cell,
+                occupant.aesthetic.color, this)) }
+            .collect(Collectors.toUnmodifiableSet())
+    }
+    override fun toString(): String = this.toBoardString()
+}
+
+private val DEFAULT_POSITION_MASK = HashMap<Cell, PlacedPiece?>().apply {
+    fun defaultPiece(type: PieceType, color: Color) = PlacedPiece(AestheticPiece(type, color), Int.MIN_VALUE)
+
+    this[Cell(0, 0)] = defaultPiece(PieceType.ROOK, WHITE)
+    this[Cell(1, 0)] = defaultPiece(PieceType.KNIGHT, WHITE)
+    this[Cell(2, 0)] = defaultPiece(PieceType.BISHOP, WHITE)
+    this[Cell(3, 0)] = defaultPiece(PieceType.QUEEN, WHITE)
+    this[Cell(4, 0)] = defaultPiece(PieceType.KING, WHITE)
+    this[Cell(5, 0)] = defaultPiece(PieceType.BISHOP, WHITE)
+    this[Cell(6, 0)] = defaultPiece(PieceType.KNIGHT, WHITE)
+    this[Cell(7, 0)] = defaultPiece(PieceType.ROOK, WHITE)
+
+    this[Cell(0, 7)] = defaultPiece(PieceType.ROOK, BLACK)
+    this[Cell(1, 7)] = defaultPiece(PieceType.KNIGHT, BLACK)
+    this[Cell(2, 7)] = defaultPiece(PieceType.BISHOP, BLACK)
+    this[Cell(3, 7)] = defaultPiece(PieceType.QUEEN, BLACK)
+    this[Cell(4, 7)] = defaultPiece(PieceType.KING, BLACK)
+    this[Cell(5, 7)] = defaultPiece(PieceType.BISHOP, BLACK)
+    this[Cell(6, 7)] = defaultPiece(PieceType.KNIGHT, BLACK)
+    this[Cell(7, 7)] = defaultPiece(PieceType.ROOK, BLACK)
+
+    for (file in 0 until 8) {
+        this[Cell(file, 1)] = defaultPiece(PieceType.PAWN, WHITE)
+        this[Cell(file, 6)] = defaultPiece(PieceType.PAWN, BLACK)
     }
 }
 
-val EMPTY_POSITION: Position = object : Position() {
-    override val nextMove: Int = -1
-
-    override fun get(cell: Cell): PlacedPiece? = null
-
-    override val filledCells: Set<Cell> = emptySet()
-}
-
-val DEFAULT_POSITION: Position = MaskedPosition(
-    under = EMPTY_POSITION,
-    mask = HashMap<Cell, PlacedPiece?>().apply {
-        fun defaultPiece(type: PieceType, color: Color) = PlacedPiece(AestheticPiece(type, color), Int.MIN_VALUE)
-
-        this[Cell(0, 0)] = defaultPiece(PieceType.ROOK, WHITE)
-        this[Cell(1, 0)] = defaultPiece(PieceType.KNIGHT, WHITE)
-        this[Cell(2, 0)] = defaultPiece(PieceType.BISHOP, WHITE)
-        this[Cell(3, 0)] = defaultPiece(PieceType.QUEEN, WHITE)
-        this[Cell(4, 0)] = defaultPiece(PieceType.KING, WHITE)
-        this[Cell(5, 0)] = defaultPiece(PieceType.BISHOP, WHITE)
-        this[Cell(6, 0)] = defaultPiece(PieceType.KNIGHT, WHITE)
-        this[Cell(7, 0)] = defaultPiece(PieceType.ROOK, WHITE)
-
-        this[Cell(0, 7)] = defaultPiece(PieceType.ROOK, BLACK)
-        this[Cell(1, 7)] = defaultPiece(PieceType.KNIGHT, BLACK)
-        this[Cell(2, 7)] = defaultPiece(PieceType.BISHOP, BLACK)
-        this[Cell(3, 7)] = defaultPiece(PieceType.QUEEN, BLACK)
-        this[Cell(4, 7)] = defaultPiece(PieceType.KING, BLACK)
-        this[Cell(5, 7)] = defaultPiece(PieceType.BISHOP, BLACK)
-        this[Cell(6, 7)] = defaultPiece(PieceType.KNIGHT, BLACK)
-        this[Cell(7, 7)] = defaultPiece(PieceType.ROOK, BLACK)
-
-        for (file in 0 until 8) {
-            this[Cell(file, 1)] = defaultPiece(PieceType.PAWN, WHITE)
-            this[Cell(file, 6)] = defaultPiece(PieceType.PAWN, BLACK)
-        }
-    })
+val DEFAULT_POSITION = Position(null, DEFAULT_POSITION_MASK)

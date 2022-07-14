@@ -11,7 +11,11 @@ data class Take(val target: Cell): Action
 
 data class Translate(val origin: Cell, val destination: Cell): Action
 
-object ClaimDraw: Action
+data class ClaimDrawAction(val evidence: Set<Position>): Action {
+    init {
+        if (evidence.size < 3) throw IllegalArgumentException()
+    }
+}
 
 data class SynchronousAction(val actions: List<Action>) {
     constructor(vararg actions: Action) : this(actions.toList())

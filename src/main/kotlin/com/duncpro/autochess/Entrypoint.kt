@@ -1,9 +1,14 @@
 package com.duncpro.autochess
 
 import com.duncpro.autochess.behavior.Translate
+import org.fusesource.jansi.AnsiConsole
 import java.time.Instant
 
-fun main() = selfPlay()
+fun main() {
+    AnsiConsole.systemInstall()
+    selfPlay()
+    AnsiConsole.systemUninstall()
+}
 
 fun selfPlay() {
     var position = DEFAULT_POSITION

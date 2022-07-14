@@ -1,27 +1,41 @@
 package com.duncpro.autochess
 
+import com.duncpro.autochess.Color.*
+import com.duncpro.autochess.PieceType.*
+import org.fusesource.jansi.Ansi
+import org.fusesource.jansi.Ansi.ansi
 import java.io.ByteArrayOutputStream
 import java.io.PrintStream
 import java.nio.charset.Charset
 
+val Cell.ansiBackgroundColor: Ansi.Color get() =
+    if (file % 2 == 0) {
+        if (rank % 2 == 0) {
+            Ansi.Color.GREEN
+        } else {
+            Ansi.Color.DEFAULT
+        }
+    } else {
+        if (rank % 2 == 0) {
+            Ansi.Color.DEFAULT
+        } else {
+            Ansi.Color.GREEN
+        }
+    }
 
-fun AestheticPiece.unicodeSymbol(): String =  when (this.color) {
-    Color.WHITE -> when (this.type) {
-        PieceType.ROOK -> "♖"
-        PieceType.KNIGHT -> "♘"
-        PieceType.BISHOP -> "♗"
-        PieceType.QUEEN -> "♕"
-        PieceType.KING -> "♔"
-        PieceType.PAWN -> "♙"
+val AestheticPiece.ansiForegroundColor: Ansi.Color get() =
+    when (this.color) {
+        WHITE -> Ansi.Color.DEFAULT
+        BLACK -> Ansi.Color.BLACK
     }
-    Color.BLACK -> when (this.type) {
-        PieceType.ROOK -> "♜"
-        PieceType.KNIGHT -> "♞"
-        PieceType.BISHOP -> "♝"
-        PieceType.QUEEN -> "♛"
-        PieceType.KING -> "♚"
-        PieceType.PAWN -> "♟"
-    }
+
+fun AestheticPiece.unicodeSymbol(): String =  when (this.type) {
+    PieceType.ROOK -> "♜"
+    PieceType.KNIGHT -> "♞"
+    PieceType.BISHOP -> "♝"
+    PieceType.QUEEN -> "♛"
+    PieceType.KING -> "♚"
+    PieceType.PAWN -> "♟"
 }
 
 fun Position.toBoardString(): String {
@@ -32,7 +46,7 @@ fun Position.toBoardString(): String {
 }
 
 fun Position.printBoard(stream: PrintStream) {
-    stream.println("WHITE           ")
+    stream.println("WHITE")
 
     for (file in 0 until 8) {
         // Files descend from the top of the page to the bottom of the page, not across the page like
@@ -40,12 +54,16 @@ fun Position.printBoard(stream: PrintStream) {
         stream.print(fileLetter(file).toString().padEnd(3))
 
         for (rank in 0 until 8) {
-            val piece = this[(Cell(file, rank))]?.aesthetic
+            val cell = Cell(file, rank)
+            val piece = this[cell]?.aesthetic
+            stream.print(ansi().bg(cell.ansiBackgroundColor))
             if (piece == null) {
-                stream.print("".padEnd(3))
+                stream.print("   ")
             } else {
-                stream.print(piece.unicodeSymbol().padEnd(3))
+                stream.print(ansi().fg(piece.ansiForegroundColor))
+                stream.print(" ${piece.unicodeSymbol()} ")
             }
+            stream.print(ansi().reset())
         }
         stream.println(fileLetter(file))
     }
@@ -55,6 +73,9 @@ fun Position.printBoard(stream: PrintStream) {
     }
     stream.print("\n")
     stream.println("BLACK".padStart(3 * 8))
+    if (this.canClaimDraw) {
+        println("${this.whoseTurn} can claim draw.")
+    }
     stream.flush()
 }
 

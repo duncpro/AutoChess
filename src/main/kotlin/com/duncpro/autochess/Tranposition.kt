@@ -4,6 +4,8 @@ import com.duncpro.autochess.Color.*
 import com.duncpro.autochess.PieceType.*
 import com.duncpro.autochess.TranspositionTable.Hit
 import com.duncpro.autochess.TranspositionTable.Miss
+import com.duncpro.autochess.behavior.KingsideCastlingScheme
+import com.duncpro.autochess.behavior.QueensideCastlingScheme
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.ConcurrentMap
 
@@ -31,7 +33,13 @@ class TransposablePawn(color: Color, val isEnpassantVulnerable: Boolean):
     }
 }
 
-data class TransposablePosition(val pieceArrangement: Map<Cell, TransposablePiece>, val whosTurn: Color)
+data class PlayerCastlingRights(val canCastleQueenside: Boolean, val canCastleKingside: Boolean)
+
+data class TransposablePosition(
+    val pieceArrangement: Map<Cell, TransposablePiece>,
+    val whosTurn: Color,
+    val castlingRights: Map<Color, PlayerCastlingRights>
+)
 
 fun TransposablePosition(position: Position): TransposablePosition {
     val pieceArrangement = HashMap<Cell, TransposablePiece>(position.filledCells.size)
@@ -54,7 +62,15 @@ fun TransposablePosition(position: Position): TransposablePosition {
         pieceArrangement[piece.location] = transposablePiece
     }
 
-    return TransposablePosition(pieceArrangement, position.whoseTurn)
+    val castlingRights = HashMap<Color, PlayerCastlingRights>()
+    for (color in Color.values()) {
+        castlingRights[color] = PlayerCastlingRights(
+            canCastleKingside = KingsideCastlingScheme.areNecessaryPiecesIntact(color, position),
+            canCastleQueenside = QueensideCastlingScheme.areNecessaryPiecesIntact(color, position)
+        )
+    }
+
+    return TransposablePosition(pieceArrangement, position.whoseTurn, castlingRights)
 }
 
 class HashMapTranspositionTable: TranspositionTable {

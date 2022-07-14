@@ -4,22 +4,17 @@ import com.duncpro.autochess.Position
 import com.duncpro.autochess.TransposablePosition
 
 object DrawBehavior {
-    fun canClaimDraw(position: Position): Boolean {
-        val uniquePositions = HashSet<TransposablePosition>()
-        var countedPositions = 0
+    fun getClaimDrawMoveIfExistsAtPosition(position: Position): SynchronousAction? {
+        val positionHistory = HashMap<TransposablePosition, MutableSet<Position>>()
 
         var nextPositionToCheck: Position? = position
         while (nextPositionToCheck != null) {
-            uniquePositions.add(nextPositionToCheck.transposable)
-            countedPositions++
-            nextPositionToCheck = position.previous
+            val duplicates = positionHistory.computeIfAbsent(nextPositionToCheck.transposable) { HashSet() }
+            duplicates.add(nextPositionToCheck)
+            nextPositionToCheck = nextPositionToCheck.previous
 
-            if (countedPositions - uniquePositions.size >= 3) {
-                return true
-            }
+            if (duplicates.size >= 3) return SynchronousAction(ClaimDrawAction(duplicates))
         }
-        return false
+        return null
     }
-
-
 }

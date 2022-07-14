@@ -4,7 +4,6 @@ import com.duncpro.autochess.BoardDimension.*
 import com.duncpro.autochess.Color.*
 import com.duncpro.autochess.behavior.*
 import java.util.stream.Collectors
-import java.util.stream.Stream
 
 enum class BoardDimension { FILE, RANK }
 
@@ -102,6 +101,8 @@ data class AestheticPiece(val type: PieceType, val color: Color)
 data class PlacedPiece(val aesthetic: AestheticPiece, val atMove: Int) {
     val isOriginalPosition: Boolean = atMove == -1
 }
+
+
 
 class Position(
     val previous: Position? = null,
@@ -209,7 +210,7 @@ class Position(
                     mask[effect.destination] = PlacedPiece(piece, this.nextMove)
                 }
                 is Spawn -> mask[effect.point] = PlacedPiece(effect.piece, this.nextMove)
-                is ClaimDraw -> return Position(this, emptyMap(), true)
+                is ClaimDrawAction -> return Position(this, emptyMap(), true)
             }
         }
 
@@ -246,9 +247,23 @@ class Position(
             }
             .collect(Collectors.toUnmodifiableSet())
 
-        val drawMove = if (DrawBehavior.canClaimDraw(this)) setOf(SynchronousAction(ClaimDraw)) else emptySet()
+        val specialMoves = HashSet<SynchronousAction>(3)
 
-        return@lazy pieceMoves union drawMove
+        // Draw by repetition
+        val claimDrawMove = DrawBehavior.getClaimDrawMoveIfExistsAtPosition(this)
+        if (claimDrawMove != null) {
+            specialMoves.add(claimDrawMove)
+        }
+
+        // Castling
+        if (QueensideCastlingScheme.canCastleNextMove(this)) {
+            specialMoves.add(QueensideCastlingScheme.createMove(this.whoseTurn))
+        }
+        if (KingsideCastlingScheme.canCastleNextMove(this)) {
+            specialMoves.add(KingsideCastlingScheme.createMove(this.whoseTurn))
+        }
+
+        return@lazy pieceMoves union specialMoves
     }
 
     /**
@@ -273,33 +288,40 @@ class Position(
                 occupant.aesthetic.color, this)) }
             .collect(Collectors.toUnmodifiableSet())
     }
+
+    val canClaimDraw: Boolean by lazy {
+        this.legalMoves.stream()
+            .flatMap { move -> move.actions.stream() }
+            .anyMatch { action -> action is ClaimDrawAction }
+    }
+
     override fun toString(): String = this.toBoardString()
 }
 
+fun preGamePlacedPiece(type: PieceType, color: Color) = PlacedPiece(AestheticPiece(type, color), -1)
+
 private val DEFAULT_POSITION_MASK = HashMap<Cell, PlacedPiece?>().apply {
-    fun defaultPiece(type: PieceType, color: Color) = PlacedPiece(AestheticPiece(type, color), Int.MIN_VALUE)
+    this[Cell(0, 0)] = preGamePlacedPiece(PieceType.ROOK, WHITE)
+    this[Cell(1, 0)] = preGamePlacedPiece(PieceType.KNIGHT, WHITE)
+    this[Cell(2, 0)] = preGamePlacedPiece(PieceType.BISHOP, WHITE)
+    this[Cell(3, 0)] = preGamePlacedPiece(PieceType.QUEEN, WHITE)
+    this[Cell(4, 0)] = preGamePlacedPiece(PieceType.KING, WHITE)
+    this[Cell(5, 0)] = preGamePlacedPiece(PieceType.BISHOP, WHITE)
+    this[Cell(6, 0)] = preGamePlacedPiece(PieceType.KNIGHT, WHITE)
+    this[Cell(7, 0)] = preGamePlacedPiece(PieceType.ROOK, WHITE)
 
-    this[Cell(0, 0)] = defaultPiece(PieceType.ROOK, WHITE)
-    this[Cell(1, 0)] = defaultPiece(PieceType.KNIGHT, WHITE)
-    this[Cell(2, 0)] = defaultPiece(PieceType.BISHOP, WHITE)
-    this[Cell(3, 0)] = defaultPiece(PieceType.QUEEN, WHITE)
-    this[Cell(4, 0)] = defaultPiece(PieceType.KING, WHITE)
-    this[Cell(5, 0)] = defaultPiece(PieceType.BISHOP, WHITE)
-    this[Cell(6, 0)] = defaultPiece(PieceType.KNIGHT, WHITE)
-    this[Cell(7, 0)] = defaultPiece(PieceType.ROOK, WHITE)
-
-    this[Cell(0, 7)] = defaultPiece(PieceType.ROOK, BLACK)
-    this[Cell(1, 7)] = defaultPiece(PieceType.KNIGHT, BLACK)
-    this[Cell(2, 7)] = defaultPiece(PieceType.BISHOP, BLACK)
-    this[Cell(3, 7)] = defaultPiece(PieceType.QUEEN, BLACK)
-    this[Cell(4, 7)] = defaultPiece(PieceType.KING, BLACK)
-    this[Cell(5, 7)] = defaultPiece(PieceType.BISHOP, BLACK)
-    this[Cell(6, 7)] = defaultPiece(PieceType.KNIGHT, BLACK)
-    this[Cell(7, 7)] = defaultPiece(PieceType.ROOK, BLACK)
+    this[Cell(0, 7)] = preGamePlacedPiece(PieceType.ROOK, BLACK)
+    this[Cell(1, 7)] = preGamePlacedPiece(PieceType.KNIGHT, BLACK)
+    this[Cell(2, 7)] = preGamePlacedPiece(PieceType.BISHOP, BLACK)
+    this[Cell(3, 7)] = preGamePlacedPiece(PieceType.QUEEN, BLACK)
+    this[Cell(4, 7)] = preGamePlacedPiece(PieceType.KING, BLACK)
+    this[Cell(5, 7)] = preGamePlacedPiece(PieceType.BISHOP, BLACK)
+    this[Cell(6, 7)] = preGamePlacedPiece(PieceType.KNIGHT, BLACK)
+    this[Cell(7, 7)] = preGamePlacedPiece(PieceType.ROOK, BLACK)
 
     for (file in 0 until 8) {
-        this[Cell(file, 1)] = defaultPiece(PieceType.PAWN, WHITE)
-        this[Cell(file, 6)] = defaultPiece(PieceType.PAWN, BLACK)
+        this[Cell(file, 1)] = preGamePlacedPiece(PieceType.PAWN, WHITE)
+        this[Cell(file, 6)] = preGamePlacedPiece(PieceType.PAWN, BLACK)
     }
 }
 

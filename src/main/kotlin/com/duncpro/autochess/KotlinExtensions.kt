@@ -1,6 +1,7 @@
 package com.duncpro.autochess
 
 import java.util.stream.Stream
+import kotlin.math.max
 import kotlin.properties.Delegates
 import kotlin.properties.ReadOnlyProperty
 import kotlin.reflect.KProperty

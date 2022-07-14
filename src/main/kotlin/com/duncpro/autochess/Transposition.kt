@@ -2,10 +2,11 @@ package com.duncpro.autochess
 
 import com.duncpro.autochess.Color.*
 import com.duncpro.autochess.PieceType.*
-import com.duncpro.autochess.TranspositionTable.Hit
-import com.duncpro.autochess.TranspositionTable.Miss
+import com.duncpro.autochess.PositionCache.Hit
+import com.duncpro.autochess.PositionCache.Miss
 import com.duncpro.autochess.behavior.KingsideCastlingScheme
 import com.duncpro.autochess.behavior.QueensideCastlingScheme
+import com.duncpro.autochess.behavior.SynchronousAction
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.ConcurrentMap
 
@@ -73,36 +74,36 @@ fun TransposablePosition(position: Position): TransposablePosition {
     return TransposablePosition(pieceArrangement, position.whoseTurn, castlingRights)
 }
 
-class HashMapTranspositionTable: TranspositionTable {
-    private val hashMap: ConcurrentMap<Key, TranspositionTable.CachedScore> = ConcurrentHashMap()
+class HashMapPositionCache: PositionCache {
+    private val hashMap: ConcurrentMap<Key, PositionCache.CacheEntry> = ConcurrentHashMap()
 
-    override operator fun get(position: Position, depth: Int): TranspositionTable.Result {
+    override operator fun get(position: Position, depth: Int): PositionCache.Result {
         val key = Key(position.transposable, depth)
         return hashMap[key]?.let(::Hit) ?: Miss
     }
 
-    override fun set(position: Position, depth: Int, score: Int, isTreeComplete: Boolean) {
+    override fun set(position: Position, depth: Int, cacheEntry: PositionCache.CacheEntry) {
         val key = Key(position.transposable, depth)
-        hashMap[key] = TranspositionTable.CachedScore(score, isTreeComplete)
+        hashMap[key] = cacheEntry
     }
 
     data class Key(val position: TransposablePosition, val depth: Int)
 }
 
-class VoidTranspositionTable: TranspositionTable {
-    override fun get(position: Position, depth: Int): TranspositionTable.Result = Miss
+class VoidPositionCache: PositionCache {
+    override fun get(position: Position, depth: Int): PositionCache.Result = Miss
 
-    override fun set(position: Position, depth: Int, score: Int, isTreeComplete: Boolean) {}
+    override fun set(position: Position, depth: Int, cacheEntry: PositionCache.CacheEntry) {}
 }
 
-interface TranspositionTable {
+interface PositionCache {
     operator fun get(position: Position, depth: Int): Result
 
-    fun set(position: Position, depth: Int, score: Int, isTreeComplete: Boolean)
+    fun set(position: Position, depth: Int, cacheEntry: CacheEntry)
 
-    data class CachedScore(val score: Int, val isTreeComplete: Boolean)
+    data class CacheEntry(val score: Int, val isTreeComplete: Boolean, val principleMove: Pair<SynchronousAction, DfsSearchResult>)
 
     sealed interface Result
-    @JvmInline value class Hit(val cachedScore: CachedScore): Result
+    @JvmInline value class Hit(val cacheEntry: CacheEntry): Result
     object Miss: Result
 }
